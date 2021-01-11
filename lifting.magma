@@ -1,0 +1,102 @@
+//Example Parameters:
+
+p:= 175039;
+N1 := 2^10;
+N2 := 3^34;
+c0 := 2;
+d0 := 3;
+epsilon := 0.5;
+
+
+// solve equation w^2+qy^2=R
+Cornacchia:=function(q,R)
+	DEBUG:=0;
+	w:=Integers()!0; 	// default value
+	y:=Integers()!0; 	// default value
+
+	foundsol,sol:=NormEquation(QuadraticField(-q),R);
+	
+	// if there is a solution, deduce w and y and return solution
+	if foundsol then
+		if (DEBUG ge 1) then "sol=",sol; end if;
+				
+		sol:=Eltseq(sol[1]);
+		w:=Integers()!sol[1];
+		y:=Integers()!sol[2];
+				
+		if (DEBUG ge 1) then "w^2 + q*y^2-R=",w^2 + q*y^2-R; end if;
+	end if;
+
+	return foundsol,w,y ;
+end function;
+
+
+/* **************************************************************************************************************************
+Lifting Algorithm with Lattice
+************************************************************************************************************************** */
+//given parameters N1, N2, p, epsilon, and endomorphism j(c0+i*d0) in jZ[i]
+//Note: N1, N2 are coprime; N1 and c0 or d0 are coprime; p is prime
+
+
+liftinglatticejZi:=function(c0,d0,p,N1,N2,epsilon)
+    RC2N1 := ResidueClassRing(2*N1);
+    RCN1 := ResidueClassRing(N1);
+    e := 1;
+    while (not IsSquare(RC2N1!(e*N2/(p*(c0^2+d0^2))))) do
+	    e := e+1;
+    end while;
+    eN2 := e*N2;
+    lambda := Sqrt(RC2N1!(eN2/(p*(c0^2+d0^2))));
+    lambda := Integers()!lambda;
+
+    //Consider affine equation 2*p*lambda(c0*c1+do*d1) = (eN2-p*lambda^2*(c0^2+d0^2))/ N1 mod N1
+    C := (eN2-p*lambda^2*(c0^2+d0^2))/(2*N1);
+    if IsUnit(RCN1!c0) then
+	    swap := false;
+	    C := Integers()!(RCN1!(C/(p*lambda*c0)));
+	    beta := Integers()! (RCN1!(d0/c0));
+    else
+	    swap := true;
+	    C := Integers()!(RCN1!(C/(p*lambda*d0)));
+	    beta := Integers()! (RCN1!(c0/d0));
+    end if;
+    
+    //Then c1+beta*d1 = C mod N1, i.e. (c1,d1) is in lattice <(beta,-1), (N1,0)> + (C,0) if c0 is invertible mod N1 [or beta*c1+d1 =C mod N1 if d0 is invertible mod N1, i.e. (d1,c1) is in the lattice]
+    lattice:=Lattice(2,[beta,-1,N1,0]);
+
+    //Goal, find closest vectors to (-c0*lambda/N1, -d0*lambda/N1) in translated lattice
+    target:=VectorSpace(Rationals(), 2)!([-c0*lambda/N1-C, -d0*lambda/N1]);
+    //enumerate enum_bound closest vectors and test whether they give a solution
+    enum_bound := Ceiling(Log(epsilon)*Log(p*N1^3)/Log(1-(1/Log(p*N1^3))));
+
+    for trials in [1..10] do //this bound can be adapted as one wishes - seems to be have a bit dodgy in MAGMA?
+	    closevecs := CloseVectors(lattice,target, Floor(N1^2/2^trials) : Max:=enum_bound); // only want solutions such that r below is positive, can change bound for close vectors here (the larger the bound, the smaller r will be - thus we first test the "close vectors" whether they are close enough, otherwise we look for vectors closer)
+	    for j in [1..#closevecs] do
+	      vec := closevecs[j][1];
+	      if swap then
+		      d1 := vec[1]+C;
+		      c1 := vec[2];
+	      else
+		      c1 := vec[1]+C; 
+		      d1 := vec[2];
+	      end if;
+	      r := Integers()!((eN2-p*((lambda*c0+N1*c1)^2+(lambda*d0+N1*d1)^2))/N1^2);
+	      if r lt 0 then
+		      "error: r is negative - try closer vectors";
+		      break;
+	      else
+		      if IsPrime(r) then //Could be optimised for larger r by combining some Trial division and then testing remaining factor whether its prime to get a decomposition of r
+		        foundsol,a1,b1:=Cornacchia(1,r);
+		        if foundsol then
+			        return true, a1, b1, c1, d1;
+		        end if;
+		      end if;
+	      end if;
+	    end for;
+    end for;
+    
+    return false, "no solution found";
+    
+end function;
+
+liftinglatticejZi(c0,d0,p,N1,N2,epsilon);
